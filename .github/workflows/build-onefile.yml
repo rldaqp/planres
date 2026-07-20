@@ -1,83 +1,30 @@
-name: Construir Transcripcion 2026 EXE unico
+name: Limpiar publicacion temporal de Transcripcion 2026
 
 on:
   push:
     branches: [main]
     paths:
-      - "Transcripcion_2026.py"
-      - "requirements-build.txt"
       - ".github/workflows/build-onefile.yml"
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
-  build:
-    runs-on: windows-latest
-    timeout-minutes: 120
-
+  cleanup:
+    runs-on: ubuntu-latest
     steps:
-      - name: Descargar codigo
-        uses: actions/checkout@v4
-
-      - name: Configurar Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Instalar herramientas de compilacion
-        shell: pwsh
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install -r requirements-build.txt
-
-      - name: Descargar modelo Whisper small para uso sin internet
-        shell: pwsh
-        env:
-          HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
-        run: |
-          python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='Systran/faster-whisper-small', local_dir=r'modelos\small')"
-          if (-not (Test-Path "modelos\small\model.bin")) { throw "No se descargo model.bin" }
-
-      - name: Construir un solo EXE
-        shell: pwsh
-        run: |
-          python -m PyInstaller `
-            --noconfirm `
-            --clean `
-            --onefile `
-            --console `
-            --noupx `
-            --name Transcripcion_2026 `
-            --collect-all faster_whisper `
-            --collect-all ctranslate2 `
-            --collect-all tokenizers `
-            --collect-all av `
-            --collect-all imageio_ffmpeg `
-            --add-data "modelos\small;modelos\small" `
-            Transcripcion_2026.py
-
-      - name: Probar el EXE generado
-        shell: pwsh
-        run: |
-          & ".\dist\Transcripcion_2026.exe" --self-test
-          if ($LASTEXITCODE -ne 0) { throw "La autoprueba del EXE fallo" }
-          Get-FileHash ".\dist\Transcripcion_2026.exe" -Algorithm SHA256
-
-      - name: Publicar EXE como descarga directa
-        shell: pwsh
+      - name: Eliminar release y tag temporal
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete transcripcion-2026-v1 --yes --cleanup-tag 2>$null
-          gh release create transcripcion-2026-v1 ".\dist\Transcripcion_2026.exe#Transcripcion_2026.exe" --title "Transcripcion 2026 - EXE portable" --notes "Un unico ejecutable para Windows de 64 bits. No requiere instalar Python. Incluye FFmpeg, Faster-Whisper y el modelo small para funcionar sin internet."
+          gh release delete transcripcion-2026-v1 --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
 
-      - name: Conservar copia temporal en Actions
-        uses: actions/upload-artifact@v4
-        with:
-          name: Transcripcion_2026_EXE_UNICO
-          path: dist/Transcripcion_2026.exe
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 30
+      - name: Eliminar artefactos temporales de transcripcion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts" --paginate --jq '.artifacts[] | select(.name | startswith("Transcripcion_2026")) | .id' | while read id; do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" || true
+          done
