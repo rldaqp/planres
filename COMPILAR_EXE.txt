@@ -1,0 +1,1 @@
+Este cambio activa la compilación y la autoprueba de Transcripcion_2026.exe en Windows.
