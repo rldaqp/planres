@@ -65,14 +65,54 @@ jobs:
         run: |
           & ".\dist\Transcripcion_2026.exe" --self-test
           if ($LASTEXITCODE -ne 0) { throw "La autoprueba del EXE fallo" }
+          $hash = (Get-FileHash ".\dist\Transcripcion_2026.exe" -Algorithm SHA256).Hash.ToLower()
           $tamano = (Get-Item ".\dist\Transcripcion_2026.exe").Length
+          "$hash  Transcripcion_2026.exe" | Set-Content -Encoding ascii ".\dist\SHA256.txt"
           Write-Host "Tamano del EXE: $tamano bytes"
+          Write-Host "SHA256: $hash"
 
-      - name: Publicar el unico archivo EXE
+      - name: Dividir temporalmente para transferencia
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path parts | Out-Null
+          $source = ".\dist\Transcripcion_2026.exe"
+          $partSize = 209715200
+          $input = [System.IO.File]::OpenRead($source)
+          try {
+            $buffer = New-Object byte[] $partSize
+            $index = 1
+            while (($read = $input.Read($buffer, 0, $buffer.Length)) -gt 0) {
+              $part = ".\parts\Transcripcion_2026.exe.part{0:D2}" -f $index
+              $output = [System.IO.File]::Create($part)
+              try { $output.Write($buffer, 0, $read) } finally { $output.Dispose() }
+              $index++
+            }
+          } finally { $input.Dispose() }
+          Copy-Item ".\dist\SHA256.txt" ".\parts\SHA256.txt"
+          Get-ChildItem .\parts | Format-Table Name,Length
+
+      - name: Publicar parte 1
         uses: actions/upload-artifact@v4
         with:
-          name: Transcripcion_2026_EXE_UNICO
-          path: dist/Transcripcion_2026.exe
-          if-no-files-found: error
+          name: Transcripcion_2026_PARTE_01
+          path: parts/Transcripcion_2026.exe.part01
+          compression-level: 0
+          retention-days: 30
+
+      - name: Publicar parte 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: Transcripcion_2026_PARTE_02
+          path: parts/Transcripcion_2026.exe.part02
+          compression-level: 0
+          retention-days: 30
+
+      - name: Publicar parte 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: Transcripcion_2026_PARTE_03
+          path: |
+            parts/Transcripcion_2026.exe.part03
+            parts/SHA256.txt
           compression-level: 0
           retention-days: 30
