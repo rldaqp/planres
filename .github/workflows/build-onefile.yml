@@ -7,12 +7,10 @@ on:
       - "Transcripcion_2026.py"
       - "requirements-build.txt"
       - ".github/workflows/build-onefile.yml"
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -27,7 +25,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       - name: Instalar herramientas de compilacion
         shell: pwsh
@@ -66,10 +63,17 @@ jobs:
         run: |
           & ".\dist\Transcripcion_2026.exe" --self-test
           if ($LASTEXITCODE -ne 0) { throw "La autoprueba del EXE fallo" }
-          $tamano = (Get-Item ".\dist\Transcripcion_2026.exe").Length
-          Write-Host "Tamano del EXE: $tamano bytes"
+          Get-FileHash ".\dist\Transcripcion_2026.exe" -Algorithm SHA256
 
-      - name: Publicar el unico archivo EXE
+      - name: Publicar EXE como descarga directa
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete transcripcion-2026-v1 --yes --cleanup-tag 2>$null
+          gh release create transcripcion-2026-v1 ".\dist\Transcripcion_2026.exe#Transcripcion_2026.exe" --title "Transcripcion 2026 - EXE portable" --notes "Un unico ejecutable para Windows de 64 bits. No requiere instalar Python. Incluye FFmpeg, Faster-Whisper y el modelo small para funcionar sin internet."
+
+      - name: Conservar copia temporal en Actions
         uses: actions/upload-artifact@v4
         with:
           name: Transcripcion_2026_EXE_UNICO
