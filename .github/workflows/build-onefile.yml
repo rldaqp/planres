@@ -1,0 +1,77 @@
+name: Construir Transcripcion 2026 EXE unico
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Transcripcion_2026.py"
+      - "requirements-build.txt"
+      - ".github/workflows/build-onefile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar herramientas de compilacion
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements-build.txt
+
+      - name: Descargar modelo Whisper small para uso sin internet
+        shell: pwsh
+        env:
+          HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
+        run: |
+          python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='Systran/faster-whisper-small', local_dir=r'modelos\small')"
+          if (-not (Test-Path "modelos\small\model.bin")) { throw "No se descargo model.bin" }
+
+      - name: Construir un solo EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --console `
+            --noupx `
+            --name Transcripcion_2026 `
+            --collect-all faster_whisper `
+            --collect-all ctranslate2 `
+            --collect-all tokenizers `
+            --collect-all av `
+            --collect-all imageio_ffmpeg `
+            --add-data "modelos\small;modelos\small" `
+            Transcripcion_2026.py
+
+      - name: Probar el EXE generado
+        shell: pwsh
+        run: |
+          & ".\dist\Transcripcion_2026.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { throw "La autoprueba del EXE fallo" }
+          $tamano = (Get-Item ".\dist\Transcripcion_2026.exe").Length
+          Write-Host "Tamano del EXE: $tamano bytes"
+
+      - name: Publicar el unico archivo EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Transcripcion_2026_EXE_UNICO
+          path: dist/Transcripcion_2026.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
